@@ -15,6 +15,9 @@ import (
 //go:embed recover.py
 var recoveryTool []byte
 
+//go:embed platform_state.py
+var platformStateTool string
+
 type Container struct {
 	ID    string `json:"Id"`
 	Name  string `json:"Name"`
@@ -338,6 +341,9 @@ func (e *Engine) platform(ctx context.Context, stage string) error {
 		if _, err := e.run(ctx, nil, "python3", "-c", sqliteBackup, p, filepath.Join(dir, name)); err != nil {
 			return err
 		}
+	}
+	if _, err := e.run(ctx, nil, "python3", "-c", platformStateTool, filepath.Join(dir, "module-state.tar")); err != nil {
+		return err
 	}
 	if err := e.capture(ctx, filepath.Join(dir, "packages.txt"), "dpkg-query", "-W", "-f=${binary:Package}\t${Version}\n"); err != nil {
 		return err

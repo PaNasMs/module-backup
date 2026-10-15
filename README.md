@@ -75,7 +75,10 @@ and databases, then restarts services. A failed apply leaves services stopped an
 prints the rollback directory. The helper intentionally preserves fresh-system
 boot/mount/network/identity settings and module registry. Recreate Linux accounts
 with their original IDs, reconnect/unlock data disks and reinstall matching signed
-modules separately. Inspect `reviewSeparately` in the plan; do not overwrite disk
+modules separately. `platform/module-state.tar` retains module configuration,
+encryption keys and online SQLite copies (excluding caches, transfer workspaces
+and restored data). Review paths, ownership and module versions before applying
+this archive; module state is not automatically activated on a replacement host. Inspect `reviewSeparately` in the plan; do not overwrite disk
 UUIDs or network settings blindly. Physical media replacement and each target OS
 need their own recorded boot/recovery acceptance.
 
