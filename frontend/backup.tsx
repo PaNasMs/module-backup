@@ -57,7 +57,7 @@ function Page() {
  const [sourcePath, setSourcePath] = useState('')
  const [connection, setConnection] = useState('')
  const [confirm, setConfirm] = useState<{ requestId?: string; kind: string; repository?: string; plan?: string; snapshot?: string; path?: string } | null>(null)
- const confirmAction = (body: NonNullable<typeof confirm>) => setConfirm({ ...body, requestId: crypto.randomUUID().replaceAll('-', '') })
+ const confirmAction = (body: NonNullable<typeof confirm>) => setConfirm({ ...body, requestId: Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('') })
  const repository = params.get('repository') || query.data?.repositories[0]?.id || ''
  const snapshot = params.get('snapshot') || ''
  const folder = params.get('folder') || '/'
