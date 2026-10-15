@@ -258,6 +258,8 @@ func TestWorkspacePinsStorageAndRejectsSourceOverlap(t *testing.T) {
 	e := engine(t)
 	parent := t.TempDir()
 	e.mount = func(string) (string, error) { return "disk-original", nil }
+	os.Chmod(parent, 0700)
+	os.Chmod(filepath.Dir(parent), 0700)
 	workspace, err := e.SetWorkspace(parent)
 	if err != nil {
 		t.Fatal(err)
@@ -295,5 +297,16 @@ func TestRepositoryReconnectPreservesIdentityAndPassword(t *testing.T) {
 	updated, err := e.AddRepository(context.Background(), RepositoryRequest{ID: original.ID, Name: "Changed", Path: dir, Provider: "local", Password: "original-password"})
 	if err != nil || updated.ID != original.ID || len(e.State().Repositories) != 1 {
 		t.Fatalf("%+v %v", updated, err)
+	}
+}
+
+func TestWorkspaceRejectsSharedWritableParent(t *testing.T) {
+	e := engine(t)
+	parent := t.TempDir()
+	if err := os.Chmod(parent, 0777); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.SetWorkspace(parent); err == nil {
+		t.Fatal("shared parent could replace private staging directory")
 	}
 }
