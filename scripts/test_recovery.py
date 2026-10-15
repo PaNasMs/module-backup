@@ -6,6 +6,7 @@ import sqlite3
 import tarfile
 import tempfile
 import unittest
+from types import SimpleNamespace
 
 spec = importlib.util.spec_from_file_location('recovery', Path(__file__).resolve().parents[1] / 'internal/backup/recover.py')
 recovery = importlib.util.module_from_spec(spec)
@@ -62,6 +63,20 @@ class RecoveryTests(unittest.TestCase):
         (self.root / 'etc/panasms').symlink_to(self.backup, target_is_directory=True)
         with self.assertRaises(ValueError):
             recovery.planned(self.backup, self.root)
+
+    def test_service_ownership_maps_to_replacement_ids(self):
+        target = SimpleNamespace(pw_uid=106, pw_gid=106)
+        original = {'uid': 106, 'gid': 107}
+        self.assertEqual(recovery.mapped_owner(0, 107, original, target), (0, 106))
+        self.assertEqual(recovery.mapped_owner(106, 107, original, target), (106, 106))
+        self.assertEqual(recovery.mapped_owner(1000, 1000, original, target), (1000, 1000))
+        with tarfile.open(self.backup / 'configuration.tar', 'w') as archive:
+            for name, data in [('etc/passwd', b'panasms:x:106:107::/:/usr/sbin/nologin\n'), ('etc/group', b'panasms:x:107:\n')]:
+                entry = tarfile.TarInfo(name)
+                entry.size = len(data)
+                archive.addfile(entry, io.BytesIO(data))
+        with tarfile.open(self.backup / 'configuration.tar') as archive:
+            self.assertEqual(recovery.service_ids(archive), original)
 
 
 if __name__ == '__main__':
