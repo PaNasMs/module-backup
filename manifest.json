@@ -1,0 +1,32 @@
+{
+  "id": "backup",
+  "title": "Backup and Restore",
+  "description": "Encrypted versioned backups and verified recovery.",
+  "version": "0.1.0",
+  "api": 1,
+  "core": ">=0.2.28,<0.3.0",
+  "architecture": "arm64",
+  "signer": "panasms-ci",
+  "service": "bin/server",
+  "dependencies": {},
+  "packages": {
+    "restic": "0.16",
+    "python3": "3.11",
+    "rclone": "1.60"
+  },
+  "license": "SUL-1.0",
+  "translations": {
+    "en": {
+      "title": "Backup and Restore",
+      "description": "Encrypted versioned backups and verified recovery."
+    },
+    "ru": {
+      "title": "Резервные копии",
+      "description": "Резервное копирование с шифрованием и проверкой восстановления."
+    },
+    "uk": {
+      "title": "Резервні копії",
+      "description": "Резервне копіювання із шифруванням і перевіркою відновлення."
+    }
+  }
+}
