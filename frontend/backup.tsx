@@ -63,7 +63,7 @@ function Page() {
  const folder = params.get('folder') || '/'
  const busy = query.data?.jobs.some(j => j.status === 'running') || !!query.data?.recovery.length
  const updateParams = (values: Record<string, string>) => { const next = new URLSearchParams(params); for (const [k, v] of Object.entries(values)) { if (v) next.set(k, v); else next.delete(k) }; setParams(next) }
- const refresh = () => { void client.invalidateQueries({ queryKey: key }); void client.invalidateQueries({ queryKey: ['backup-snapshots'] }) }
+ const refresh = () => { void client.invalidateQueries({ queryKey: key }); void client.invalidateQueries({ queryKey: ['backup-snapshots'] }); void client.invalidateQueries({ queryKey: ['backup-files'] }) }
  const save = useMutation({ mutationFn: () => dialog === 'repository' ? api('repositories', 'POST', repoForm) : api('plans', 'POST', plan), onSuccess: () => { toast(tr('saved')); setDialog(null); setRepoForm({ id: '', name: '', path: '', password: '', create: true, provider: 'local', grant: '' }); refresh() } })
  const run = useMutation({ mutationFn: (body: NonNullable<typeof confirm>) => api('jobs', 'POST', body), onSuccess: () => { toast(tr('accepted')); setConfirm(null); setPart('history'); refresh() } })
  const workspace = useMutation({ mutationFn: (path: string) => api('workspace', 'POST', { path }), onSuccess: () => { toast(tr('saved')); setWorkspacePath(''); setPicker(null); refresh() } })
