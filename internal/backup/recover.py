@@ -62,6 +62,25 @@ def planned(backup, root):
         files.append(dest)
     return files
 
+def service_ids(archive):
+    values = {}
+    for member in archive.getmembers():
+        name = member.name.lstrip('/')
+        if name not in ('etc/passwd', 'etc/group') or not member.isfile():
+            continue
+        for line in archive.extractfile(member).read().decode().splitlines():
+            fields = line.split(':')
+            if fields[0] == 'panasms':
+                values['uid' if name == 'etc/passwd' else 'gid'] = int(fields[2])
+    if set(values) != {'uid', 'gid'} or min(values.values()) <= 0:
+        raise ValueError('Backup lacks the PaNasMs service account identity')
+    return values
+
+
+def mapped_owner(uid, gid, original, target):
+    return (target.pw_uid if uid == original['uid'] else uid,
+            target.pw_gid if gid == original['gid'] else gid)
+
 def atomic(path, data, mode, uid=0, gid=0):
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, name = tempfile.mkstemp(prefix='.recovery-', dir=path.parent)
@@ -101,6 +120,10 @@ def main():
         return
     if not args.confirm_replacement or os.geteuid() != 0:
         raise ValueError('Apply requires root and --confirm-replacement on the replacement installation')
+    import pwd
+    account = pwd.getpwnam('panasms')
+    with tarfile.open(backup / 'configuration.tar') as archive:
+        original_service = service_ids(archive)
     saved = Path(tempfile.mkdtemp(prefix='panasms-before-recovery-', dir=root / 'var/backups'))
     os.chmod(saved, 0o700)
     services = []
@@ -119,8 +142,14 @@ def main():
         with tarfile.open(backup / 'configuration.tar') as archive:
             for member in archive.getmembers():
                 name = member.name.lstrip('/')
+                uid, gid = mapped_owner(member.uid, member.gid, original_service, account)
+                if member.isdir() and any(f.startswith(name + '/') for f in replaced):
+                    directory = safe_target(root, name)
+                    directory.mkdir(parents=True, exist_ok=True)
+                    os.chmod(directory, member.mode & 0o777)
+                    os.chown(directory, uid, gid)
                 if name in replaced:
-                    atomic(safe_target(root, name), archive.extractfile(member).read(), member.mode, member.uid, member.gid)
+                    atomic(safe_target(root, name), archive.extractfile(member).read(), member.mode, uid, gid)
         for name, dest in DATABASES.items():
             target = safe_target(root, dest)
             for suffix in ('-wal', '-shm'):
@@ -129,8 +158,6 @@ def main():
                     shutil.move(sidecar, saved / (name + suffix))
             atomic(target, (backup / name).read_bytes(), 0o600)
             if dest == 'var/lib/panasms/state.db':
-                import pwd
-                account = pwd.getpwnam('panasms')
                 os.chown(target, account.pw_uid, account.pw_gid)
     except Exception:
         print('Recovery interrupted. Services remain stopped. Previous files: ' + str(saved))
