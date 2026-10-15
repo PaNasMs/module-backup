@@ -1,0 +1,73 @@
+name: Build and release
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+          - arch: amd64
+            runner: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version: '1.27.1'
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24'
+          cache: npm
+      - run: sudo apt-get update && sudo apt-get install -y libpam0g-dev restic rclone
+      - run: sh scripts/build.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: module-payload-${{ matrix.arch }}
+          path: dist/*.unsigned.zip
+          if-no-files-found: error
+  build:
+    needs: package
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every architecture
+        env:
+          RESULT: ${{ needs.package.result }}
+        run: test "$RESULT" = success
+  release:
+    if: startsWith(github.ref, 'refs/tags/v') && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Download tested payload and publish immutable source release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh run download "$RUN_ID" --pattern "module-payload-*" --dir payload
+          if gh release view "$TAG" --json isDraft --jq .isDraft > draft.txt 2>/dev/null; then
+            test "$(cat draft.txt)" = true || exit 0
+          else
+            gh release create "$TAG" --verify-tag --draft --title "$TAG" --notes 'ARM64 and AMD64 build payloads. Install the signed package from the PaNasMs module registry.'
+          fi
+          gh release upload "$TAG" payload/*/*.unsigned.zip --clobber
+          gh release edit "$TAG" --draft=false

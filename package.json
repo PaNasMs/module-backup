@@ -1,0 +1,22 @@
+{
+  "name": "@panasms/module-backup",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc && vite build"
+  },
+  "dependencies": {
+    "@mdi/js": "^7.4.47",
+    "@radix-ui/react-dialog": "^1.1.23",
+    "@tanstack/react-query": "^5.103.1",
+    "react": "^19.3.0",
+    "react-router-dom": "^7.18.4"
+  },
+  "devDependencies": {
+    "@panasms/module-sdk": "https://github.com/PaNasMs/module-sdk/archive/2e68fe38261c626df5ec394d2a5b30dd1e3f454a.tar.gz",
+    "@types/react": "^19.3.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.0"
+  }
+}

@@ -1,0 +1,18 @@
+.backup-content { display: grid; gap: var(--space-4); align-content: start; min-width: 0; }
+.backup-panel { background: var(--panel); padding: var(--space-5); border-radius: var(--radius-lg); min-width: 0; }
+.backup-panel h2 { margin-top: 0; }
+.backup-panel p, .backup-panel li { overflow-wrap: anywhere; }
+.backup-path { overflow-wrap: anywhere; word-break: break-word; }
+.backup-form { display: grid; gap: var(--space-4); }
+.backup-form label, .backup-panel > label { display: grid; gap: var(--space-2); }
+.backup-form .backup-check { display: flex; align-items: center; gap: var(--space-2); }
+.backup-form .backup-check input { width: 20px; min-height: 20px; flex-shrink: 0; }
+.backup-dialog { width: min(680px, 100%); }
+.backup-form input, .backup-form select, .backup-panel select { width: 100%; min-width: 0; box-sizing: border-box; }
+.backup-list { list-style: none; padding: 0; margin: var(--space-4) 0; }
+.backup-list > li { display: flex; justify-content: space-between; align-items: center; gap: var(--space-4); padding: var(--space-4) 0; border-bottom: 1px solid var(--line); }
+.backup-list > li > div { min-width: 0; }
+.backup-list small { display: block; color: var(--mute); }
+.backup-tasks { display: grid; gap: var(--space-2); }
+.backup-tasks a { display: flex; align-items: center; gap: var(--space-2); }
+@media(max-width: 639px) { .backup-panel { padding: var(--space-4); } .backup-list > li { align-items: stretch; flex-direction: column; } .backup-page .actions { flex-wrap: wrap; } }
