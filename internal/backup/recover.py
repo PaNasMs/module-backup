@@ -163,7 +163,12 @@ def main():
         print('Recovery interrupted. Services remain stopped. Previous files: ' + str(saved))
         raise
     if services:
-        subprocess.run(['systemctl', 'start', *services], check=True)
+        try:
+            subprocess.run(['systemctl', 'start', *services], check=True)
+        except Exception:
+            subprocess.run(['systemctl', 'stop', *services], check=False)
+            print('Service startup failed. Previous files: ' + str(saved))
+            raise
     print('Applied platform configuration. Previous files: ' + str(saved))
     print('Verify login, storage, users, modules and applications before using the replacement system.')
 
