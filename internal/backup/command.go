@@ -305,6 +305,11 @@ func (e *Engine) AddRepository(ctx context.Context, v RepositoryRequest) (Reposi
 	return r, nil
 }
 func (e *Engine) query(ctx context.Context, id string, args ...string) ([]byte, error) {
+	e.queryMu.Lock()
+	defer e.queryMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	e.mu.Lock()
 	r, err := e.repo(id)
 	if err != nil || e.busy {

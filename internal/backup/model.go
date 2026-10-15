@@ -71,13 +71,14 @@ type State struct {
 	Recovery     []string     `json:"recovery"`
 }
 type Engine struct {
-	mu     sync.Mutex
-	root   string
-	state  State
-	busy   bool
-	cancel func()
-	run    Command
-	mount  func(string) (string, error)
+	mu      sync.Mutex
+	queryMu sync.Mutex
+	root    string
+	state   State
+	busy    bool
+	cancel  func()
+	run     Command
+	mount   func(string) (string, error)
 }
 
 func newID() string {

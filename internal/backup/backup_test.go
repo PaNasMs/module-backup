@@ -310,3 +310,42 @@ func TestWorkspaceRejectsSharedWritableParent(t *testing.T) {
 		t.Fatal("shared parent could replace private staging directory")
 	}
 }
+
+func TestConcurrentBrowserReadsWaitForEachOther(t *testing.T) {
+	e := engine(t)
+	e.state.Repositories = []Repository{{ID: "test", Path: t.TempDir(), Mount: "test"}}
+	e.mount = func(string) (string, error) { return "test", nil }
+	entered := make(chan struct{}, 2)
+	release := make(chan struct{})
+	e.run = func(context.Context, io.Writer, string, ...string) ([]byte, error) {
+		entered <- struct{}{}
+		<-release
+		return []byte("[]"), nil
+	}
+	first := make(chan error, 1)
+	second := make(chan error, 1)
+	go func() { _, err := e.query(context.Background(), "test", "snapshots"); first <- err }()
+	<-entered
+	go func() { _, err := e.query(context.Background(), "test", "ls", strings.Repeat("a", 64)); second <- err }()
+	var early bool
+	var secondErr error
+	select {
+	case secondErr = <-second:
+		early = true
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	firstErr := <-first
+	if !early {
+		secondErr = <-second
+	}
+	if early || firstErr != nil || secondErr != nil {
+		t.Fatalf("concurrent reads: early=%v first=%v second=%v", early, firstErr, secondErr)
+	}
+	e.mu.Lock()
+	e.busy = true
+	e.mu.Unlock()
+	if _, err := e.query(context.Background(), "test", "snapshots"); err == nil {
+		t.Fatal("read must still reject an active backup job")
+	}
+}
