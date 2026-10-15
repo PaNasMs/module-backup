@@ -2,6 +2,7 @@ package backup
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -44,6 +45,20 @@ func (e *Engine) SetWorkspace(parent string) (Workspace, error) {
 	if err := cleanPath(parent); err != nil {
 		return Workspace{}, err
 	}
+	for ancestor := parent; ; ancestor = filepath.Dir(ancestor) {
+		info, err := os.Stat(ancestor)
+		if err != nil {
+			return Workspace{}, err
+		}
+		owner := info.Sys().(*syscall.Stat_t).Uid
+		if (owner != 0 && owner != uint32(os.Geteuid())) || (info.Mode().Perm()&0022 != 0 && info.Mode()&os.ModeSticky == 0) {
+			return Workspace{}, fmt.Errorf("Choose a private folder on a local disk; parent %s must be owned by root and not writable by other users", ancestor)
+		}
+		if ancestor == "/" {
+			break
+		}
+	}
+
 	path := filepath.Join(parent, "panasms-backup-work")
 	for _, denied := range []string{"/proc", "/sys", "/dev", "/run", e.root} {
 		if within(path, denied) || within(denied, path) {
