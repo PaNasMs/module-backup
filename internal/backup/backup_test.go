@@ -349,3 +349,64 @@ func TestConcurrentBrowserReadsWaitForEachOther(t *testing.T) {
 		t.Fatal("read must still reject an active backup job")
 	}
 }
+
+func TestClearTaskHistoryPreservesRecordsAndActiveWork(t *testing.T) {
+	e := engine(t)
+	request := JobRequest{RequestID: strings.Repeat("a", 32), Kind: "check", Repository: "repo"}
+	raw, _ := json.Marshal(request)
+	digest := sha256.Sum256(raw)
+	e.state.Repositories = []Repository{{ID: "repo", Name: "Keep repository"}}
+	e.state.Plans = []Plan{{ID: "plan", Enabled: true}}
+	e.state.Jobs = []Job{
+		{ID: request.RequestID, Request: hex.EncodeToString(digest[:]), Status: "succeeded", Destination: "/retained/restore", File: "file.txt"},
+		{ID: "failed", Status: "failed"}, {ID: "cancelled", Status: "cancelled"}, {ID: "interrupted", Status: "interrupted"},
+		{ID: "active", Status: "running"}, {ID: "future", Status: "queued"},
+	}
+	if err := e.save(); err != nil {
+		t.Fatal(err)
+	}
+	n, err := e.ClearTaskHistory()
+	if err != nil || n != 4 {
+		t.Fatalf("clear: %d %v", n, err)
+	}
+	s := e.State()
+	if len(s.Jobs) != 6 || len(s.Repositories) != 1 || len(s.Plans) != 1 || !s.Plans[0].Enabled {
+		t.Fatal(s)
+	}
+	for i, j := range s.Jobs {
+		if j.Dismissed != (i < 4) {
+			t.Fatal(j)
+		}
+	}
+	if s.Jobs[0].Destination != "/retained/restore" || s.Jobs[0].File != "file.txt" {
+		t.Fatal(s.Jobs[0])
+	}
+	if n, err = e.ClearTaskHistory(); err != nil || n != 0 {
+		t.Fatalf("repeat: %d %v", n, err)
+	}
+	replay, err := e.Start(request)
+	if err != nil || replay.ID != request.RequestID || !replay.Dismissed || e.busy {
+		t.Fatalf("replayed operation: %+v %v", replay, err)
+	}
+	reloaded, err := New(e.root)
+	if err != nil || !reloaded.State().Jobs[0].Dismissed {
+		t.Fatalf("reload: %v", err)
+	}
+}
+
+func TestClearTaskHistoryRetainsRecoveryAndRollsBackOnWriteFailure(t *testing.T) {
+	e := engine(t)
+	e.state.Jobs = []Job{{ID: "failed", Status: "failed"}}
+	e.state.Recovery = []string{"container-needs-recovery"}
+	if n, err := e.ClearTaskHistory(); n != 0 || err != nil || e.State().Jobs[0].Dismissed {
+		t.Fatalf("recovery: %d %v", n, err)
+	}
+	e.state.Recovery = nil
+	e.root = filepath.Join(e.root, "missing")
+	if _, err := e.ClearTaskHistory(); err == nil {
+		t.Fatal("write failure not returned")
+	}
+	if e.State().Jobs[0].Dismissed {
+		t.Fatal("failed save hid the task")
+	}
+}

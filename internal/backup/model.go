@@ -45,6 +45,7 @@ type Plan struct {
 	NextRun       time.Time `json:"nextRun"`
 }
 type Job struct {
+	Dismissed   bool       `json:"dismissed,omitempty"`
 	File        string     `json:"file,omitempty"`
 	Request     string     `json:"request,omitempty"`
 	ID          string     `json:"id"`

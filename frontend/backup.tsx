@@ -19,7 +19,7 @@ const tr = translator('backup')
 type Repository = { id: string; name: string; path: string; provider: string }
 type Source = { kind: string; path: string }
 type Plan = { id?: string; name: string; repository: string; sources: Source[]; everyHours: number; keepLast: number; keepDaily: number; keepWeekly: number; enabled: boolean; allowDowntime: boolean; nextRun?: string }
-type Job = { file?: string; id: string; kind: string; repository: string; plan?: string; status: string; phase: string; started: string; error?: string; destination?: string; snapshot?: string }
+type Job = { dismissed?: boolean; file?: string; id: string; kind: string; repository: string; plan?: string; status: string; phase: string; started: string; error?: string; destination?: string; snapshot?: string }
 type State = { workspace: { path: string }; repositories: Repository[]; plans: Plan[]; jobs: Job[]; recovery: string[] }
 type Snapshot = { id: string; time: string; paths: string[]; tags: string[] }
 type Node = { path: string; name: string; type: string; size?: number }
@@ -32,7 +32,7 @@ const initialPlan = (): Plan => ({ name: '', repository: '', sources: [], everyH
 
 function Tasks() {
  const query = useQuery({ queryKey: key, queryFn: state, refetchInterval: 5000, retry: false })
- return <div className="backup-tasks">{query.data?.jobs.slice(-5).reverse().map(j => <Link key={j.id} to="/backup/history"><Icon path={mdiBackupRestore} /><span>{tr(j.kind)} · {tr(j.status)}{j.status === 'running' && ` · ${tr(j.phase)}`}</span></Link>)}</div>
+ return <div className="backup-tasks">{query.data?.jobs.filter(j => !j.dismissed).slice(-5).reverse().map(j => <Link key={j.id} to="/backup/history"><Icon path={mdiBackupRestore} /><span>{tr(j.kind)} · {tr(j.status)}{j.status === 'running' && ` · ${tr(j.phase)}`}</span></Link>)}</div>
 }
 function Indicator() {
  const previous = useRef<Record<string, string>>({})
@@ -145,4 +145,10 @@ function Page() {
   </DialogContent></Dialog.Portal></Dialog.Root>
  </div>
 }
-registerModule({ id: 'backup', title: tr('title'), path: '/backup', routes: ['plans', 'repositories', 'snapshots', 'history', 'recovery'], icon: mdiBackupRestore, component: Page, tasks: Tasks, backgroundIndicator: Indicator })
+registerModule({ id: 'backup', title: tr('title'), path: '/backup', routes: ['plans', 'repositories', 'snapshots', 'history', 'recovery'], icon: mdiBackupRestore, component: Page, tasks: Tasks, backgroundIndicator: Indicator,
+ taskHistory: {
+  queryKey: key,
+  status: async () => { const s = await state(); return { canClear: !s.recovery.length && s.jobs.some(j => !j.dismissed && ['succeeded', 'failed', 'cancelled', 'interrupted'].includes(j.status)) } },
+  clear: () => api('jobs/clear', 'POST', {}),
+ },
+})

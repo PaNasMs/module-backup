@@ -445,3 +445,29 @@ func (e *Engine) Schedule(ctx context.Context) {
 		}
 	}
 }
+
+func (e *Engine) ClearTaskHistory() (int, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if len(e.state.Recovery) > 0 {
+		return 0, nil
+	}
+	old := append([]Job(nil), e.state.Jobs...)
+	count := 0
+	for i := range e.state.Jobs {
+		j := &e.state.Jobs[i]
+		if !j.Dismissed && (j.Status == "succeeded" || j.Status == "failed" || j.Status == "cancelled" || j.Status == "interrupted") {
+			j.Dismissed = true
+			count++
+		}
+	}
+	if count == 0 {
+		return 0, nil
+	}
+	// Keep records for request deduplication and restored-file downloads.
+	if err := e.save(); err != nil {
+		e.state.Jobs = old
+		return 0, err
+	}
+	return count, nil
+}

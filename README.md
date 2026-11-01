@@ -100,3 +100,8 @@ mobile and assistive technology is tracked independently of compilation.
 The build emits unsigned ARM64/AMD64 source payloads. Install only signed packages
 published through the PaNasMs module registry. Original code is under SUL-1.0; see
 LICENSE and NOTICE.
+
+The shared Tasks menu can clear completed Backup entries. Clearing dismisses them
+from that menu; detailed history, request deduplication, restored-file downloads,
+backup snapshots and schedules are retained. Running tasks and tasks with pending
+application recovery cannot be cleared.

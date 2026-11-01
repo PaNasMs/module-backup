@@ -70,6 +70,13 @@ func (e *Engine) Handler(allowed map[string]bool) http.Handler {
 			if err = decode(w, r, &body); err == nil {
 				value, err = e.SavePlan(body)
 			}
+		case r.Method == "POST" && r.URL.Path == "/jobs/clear":
+			var body struct{}
+			if err = decode(w, r, &body); err == nil {
+				var cleared int
+				cleared, err = e.ClearTaskHistory()
+				value = map[string]int{"cleared": cleared}
+			}
 		case r.Method == "POST" && r.URL.Path == "/jobs":
 			var body JobRequest
 			if err = decode(w, r, &body); err == nil {
