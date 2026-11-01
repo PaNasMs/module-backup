@@ -2,6 +2,7 @@
 set -eu
 npm ci
 npm run build
+node scripts/test_task_history.mjs
 mkdir -p dist/bin
 go test -race ./...
 go vet ./...
