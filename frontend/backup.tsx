@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import * as Dialog from '@radix-ui/react-dialog'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { mdiBackupRestore, mdiCalendarClockOutline, mdiDatabaseOutline, mdiHistory, mdiFolderOutline, mdiShieldCheckOutline } from '@mdi/js'
 import { Button, DialogContent, FolderPicker, Icon, Notice, SectionNav } from '@panasms/ui'
 import { registerModule } from '@panasms/runtime'
@@ -43,7 +43,8 @@ function Indicator() {
 }
 function Page() {
  const [part, setPart] = useRouteTab('/backup', ['plans', 'repositories', 'snapshots', 'history', 'recovery'], 'plans')
- const [params, setParams] = useSearchParams()
+ const [params] = useSearchParams()
+ const navigate = useNavigate()
  const query = useQuery({ queryKey: key, queryFn: state, refetchInterval: 5000, retry: false })
  const client = useQueryClient()
  const [dialog, setDialog] = useState<'repository' | 'plan' | null>(null)
@@ -62,7 +63,14 @@ function Page() {
  const snapshot = params.get('snapshot') || ''
  const folder = params.get('folder') || '/'
  const busy = query.data?.jobs.some(j => j.status === 'running') || !!query.data?.recovery.length
- const updateParams = (values: Record<string, string>) => { const next = new URLSearchParams(params); for (const [k, v] of Object.entries(values)) { if (v) next.set(k, v); else next.delete(k) }; setParams(next) }
+ const updateParams = (values: Record<string, string>, pathname?: string) => {
+  const next = new URLSearchParams(params)
+  for (const [key, value] of Object.entries(values)) {
+   if (value) next.set(key, value)
+   else next.delete(key)
+  }
+  void navigate({ pathname, search: next.toString() })
+ }
  const refresh = () => { void client.invalidateQueries({ queryKey: key }); void client.invalidateQueries({ queryKey: ['backup-snapshots'] }); void client.invalidateQueries({ queryKey: ['backup-files'] }) }
  const save = useMutation({ mutationFn: () => dialog === 'repository' ? api('repositories', 'POST', repoForm) : api('plans', 'POST', plan), onSuccess: () => { toast(tr('saved')); setDialog(null); setRepoForm({ id: '', name: '', path: '', password: '', create: true, provider: 'local', grant: '' }); refresh() } })
  const run = useMutation({ mutationFn: (body: NonNullable<typeof confirm>) => api('jobs', 'POST', body), onSuccess: () => { toast(tr('accepted')); setConfirm(null); setPart('history'); refresh() } })
@@ -99,7 +107,7 @@ function Page() {
     </>}
     {part === 'repositories' && query.data && <>
      {!query.data.repositories.length && <div className="backup-panel"><h2>{tr('noRepositories')}</h2><p>{tr('repositoryHelp')}</p></div>}
-     {query.data.repositories.map(r => <article className="backup-panel" key={r.id}><h2>{r.name}</h2><p>{tr(r.provider || 'local')}</p><p className="backup-path">{r.path}</p><div className="actions"><Button type="button" onClick={() => { updateParams({ repository: r.id, snapshot: '', folder: '' }); setPart('snapshots') }}>{tr('browse')}</Button><Button type="button" disabled={busy} onClick={() => { save.reset(); setKeySaved(false); setRepoForm({ id: r.id, name: r.name, path: r.path, provider: r.provider, password: '', create: false, grant: '' }); setDialog('repository') }}>{tr('reconnect')}</Button><Button type="button" disabled={busy} onClick={() => { run.reset(); confirmAction({ kind: 'check', repository: r.id }) }}>{tr('check')}</Button></div></article>)}
+     {query.data.repositories.map(r => <article className="backup-panel" key={r.id}><h2>{r.name}</h2><p>{tr(r.provider || 'local')}</p><p className="backup-path">{r.path}</p><div className="actions"><Button type="button" onClick={() => updateParams({ repository: r.id, snapshot: '', folder: '' }, '/backup/snapshots')}>{tr('browse')}</Button><Button type="button" disabled={busy} onClick={() => { save.reset(); setKeySaved(false); setRepoForm({ id: r.id, name: r.name, path: r.path, provider: r.provider, password: '', create: false, grant: '' }); setDialog('repository') }}>{tr('reconnect')}</Button><Button type="button" disabled={busy} onClick={() => { run.reset(); confirmAction({ kind: 'check', repository: r.id }) }}>{tr('check')}</Button></div></article>)}
     </>}
     {part === 'snapshots' && <div className="backup-panel">
      <label>{tr('repository')}<select value={repository} onChange={e => updateParams({ repository: e.target.value, snapshot: '', folder: '' })}><option value="">{tr('choose')}</option>{query.data?.repositories.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></label>
