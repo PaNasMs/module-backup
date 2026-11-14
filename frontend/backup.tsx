@@ -31,7 +31,6 @@ const key = ['backup-state']
 const state = () => api<State>('state')
 const initialPlan = (): Plan => ({ name: '', repository: '', sources: [], everyHours: 24, keepLast: 3, keepDaily: 7, keepWeekly: 4, enabled: true, allowDowntime: false })
 const initialRepository = (): RepositoryForm => ({ id: '', name: '', path: '', password: '', create: true, provider: 'local', grant: '' })
-const repositoryDraft = (form: RepositoryForm, connection: string, keySaved: boolean) => JSON.stringify({ form, connection, keySaved })
 const planDraft = (value: Plan, sourceKind: string, sourcePath: string) => JSON.stringify({ plan: value, sourceKind, sourcePath })
 
 function Tasks() {
@@ -56,7 +55,9 @@ function Page() {
  const [repoForm, setRepoForm] = useState<RepositoryForm>(initialRepository)
  const [workspacePath, setWorkspacePath] = useState('')
  const [planBaseline, setPlanBaseline] = useState('')
- const [repoBaseline, setRepoBaseline] = useState('')
+ const [repoBaseline, setRepoBaseline] = useState<RepositoryForm | null>(null)
+ const [repoBaselineConnection, setRepoBaselineConnection] = useState('')
+ const [repoBaselinePending, setRepoBaselinePending] = useState(false)
  const [keySaved, setKeySaved] = useState(false)
  const [plan, setPlan] = useState<Plan>(initialPlan)
  const [sourceKind, setSourceKind] = useState('files')
@@ -87,9 +88,30 @@ function Page() {
  const connections = useQuery({ queryKey: ['external-connections'], queryFn: () => request<{ id: string; provider: string; email: string }[]>('external/connections'), enabled: dialog === 'repository' && repoForm.provider !== 'local' })
  const linked = connections.data?.filter(c => c.provider === (repoForm.provider === 'drive' ? 'google' : repoForm.provider)) || []
  const selectedConnection = connection || linked[0]?.id || ''
+ useEffect(() => {
+  if (!repoBaselinePending || !connections.isSuccess || !repoBaseline) return
+  const provider = repoBaseline.provider === 'drive' ? 'google' : repoBaseline.provider
+  setRepoBaselineConnection(connections.data?.find(c => c.provider === provider)?.id || '')
+  setRepoBaselinePending(false)
+ }, [repoBaselinePending, connections.isSuccess, connections.data, repoBaseline])
  const addSource = () => { if (!sourcePath && sourceKind !== 'platform') return; setPlan({ ...plan, sources: [...plan.sources, { kind: sourceKind, path: sourceKind === 'platform' ? 'platform' : sourcePath }] }); setSourcePath('') }
  const openPlan = (value?: Plan) => { save.reset(); const draft = value || { ...initialPlan(), repository }; setPlan(draft); setSourceKind('files'); setSourcePath(''); setConnection(''); setPlanBaseline(planDraft(draft, 'files', '')); setDialog('plan'); setPicker(null) }
- const openRepository = (form: RepositoryForm) => { save.reset(); setKeySaved(false); setConnection(''); setRepoForm(form); setRepoBaseline(repositoryDraft(form, '', false)); setDialog('repository'); setPicker(null) }
+ const openRepository = (form: RepositoryForm) => {
+  save.reset()
+  setKeySaved(false)
+  setConnection('')
+  setRepoForm(form)
+  setRepoBaseline(form)
+  const provider = form.provider === 'drive' ? 'google' : form.provider
+  setRepoBaselineConnection(connections.data?.find(c => c.provider === provider)?.id || '')
+  setRepoBaselinePending(form.provider !== 'local' && !connections.isSuccess)
+  setDialog('repository')
+  setPicker(null)
+ }
+ const repositoryDirty = !!repoBaseline && (
+  JSON.stringify({ form: repoForm, keySaved }) !== JSON.stringify({ form: repoBaseline, keySaved: false }) ||
+  (!repoBaselinePending && selectedConnection !== repoBaselineConnection)
+ )
  return <div className="backup-page">
   <div className="page-heading"><h1>{tr('title')}</h1><div className="actions">
    {part === 'plans' && <Button type="button" className="primary" disabled={!query.data?.repositories.length || busy} onClick={() => openPlan()}>{tr('addPlan')}</Button>}
@@ -129,7 +151,7 @@ function Page() {
     {part === 'recovery' && <div className="backup-panel"><h2>{tr('recovery')}</h2><h3>{tr('workingDisk')}</h3><p>{tr('workingDiskHelp')}</p><p className="backup-path">{query.data?.workspace.path || '/var/lib/panasms-backup'}</p><Button type="button" disabled={busy} onClick={() => setPicker('workspace')}>{tr('chooseFolder')}</Button>{picker === 'workspace' && <FolderPicker policy="mount" onChoose={path => { setWorkspacePath(path); setPicker(null) }} />}{workspacePath && <><p className="backup-path">{workspacePath}</p><Button type="button" className="primary" disabled={workspace.isPending || busy} onClick={() => workspace.mutate(workspacePath)}>{tr('save')}</Button></>}{workspace.isPending && <Notice>{tr('saving')}</Notice>}{workspace.error && <Notice error>{workspace.error.message}</Notice>}<h3>{tr('recovery')}</h3><p>{tr('recoveryHelp')}</p><ol><li>{tr('recoveryStep1')}</li><li>{tr('recoveryStep2')}</li><li>{tr('recoveryStep3')}</li><li>{tr('recoveryStep4')}</li></ol><Notice>{tr('recoveryUnverified')}</Notice></div>}
    </section>
   </div>
-  <Dialog.Root open={!!dialog} onOpenChange={open => { if (!open) { setDialog(null); setPicker(null) } }}><Dialog.Portal><Dialog.Overlay className="dialog-overlay" /><DialogContent className="settings-dialog" variant="form" intent="edit" dirty={dialog === 'plan' ? planDraft(plan, sourceKind, sourcePath) !== planBaseline : repositoryDraft(repoForm, connection, keySaved) !== repoBaseline} busy={save.isPending} message={tr('saving')}
+  <Dialog.Root open={!!dialog} onOpenChange={open => { if (!open) { setDialog(null); setPicker(null) } }}><Dialog.Portal><Dialog.Overlay className="dialog-overlay" /><DialogContent className="settings-dialog" variant="form" intent="edit" dirty={dialog === 'plan' ? planDraft(plan, sourceKind, sourcePath) !== planBaseline : repositoryDirty} busy={save.isPending} message={tr('saving')}
    header={<><Dialog.Title>{tr(dialog === 'plan' ? 'plan' : 'repository')}</Dialog.Title><Dialog.Description>{tr(dialog === 'plan' ? 'planHelp' : 'repositoryHelp')}</Dialog.Description></>}
    footer={!picker && <div className="actions"><Dialog.Close asChild><Button type="button" data-dialog-cancel>{tr('cancel')}</Button></Dialog.Close><Button className="primary" disabled={save.isPending || (dialog === 'repository' && (!keySaved || !repoForm.password || (repoForm.provider !== 'local' && !repoForm.grant)))} type="submit" form="backup-editor">{tr('save')}</Button></div>}>
    {picker ? <><Button type="button" onClick={() => setPicker(null)}>{tr('back')}</Button><FolderPicker policy="mount" newFolder={picker === 'repository'} initialPath={picker === 'repository' ? repoForm.path : sourcePath} onChoose={path => { if (picker === 'repository') setRepoForm({ ...repoForm, path }); else setSourcePath(path); setPicker(null) }} /></> : dialog === 'repository' ? <form id="backup-editor" className="backup-form" onSubmit={event => { event.preventDefault(); save.mutate() }}>
