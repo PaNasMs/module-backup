@@ -8,7 +8,7 @@ const { chromium, expect } = require('@playwright/test')
 const base = process.env.FRONTEND_TEST_URL ?? 'http://127.0.0.1:15173'
 const bundle = await readFile(new URL('../dist/ui/index.js', import.meta.url), 'utf8')
 const browser = await chromium.launch({
-  executablePath: process.env.CHROME_PATH || '/opt/google/chrome/chrome',
+  executablePath: process.env.CHROME_PATH || undefined,
   headless: true,
   args: ['--no-sandbox'],
 })
