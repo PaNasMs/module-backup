@@ -17,6 +17,7 @@ import './backup.css'
 registerTranslations('backup', { en, ru, uk })
 const tr = translator('backup')
 type Repository = { id: string; name: string; path: string; provider: string }
+type RepositoryForm = { id: string; name: string; path: string; password: string; create: boolean; provider: string; grant: string }
 type Source = { kind: string; path: string }
 type Plan = { id?: string; name: string; repository: string; sources: Source[]; everyHours: number; keepLast: number; keepDaily: number; keepWeekly: number; enabled: boolean; allowDowntime: boolean; nextRun?: string }
 type Job = { dismissed?: boolean; file?: string; id: string; kind: string; repository: string; plan?: string; status: string; phase: string; started: string; error?: string; destination?: string; snapshot?: string }
@@ -29,6 +30,8 @@ const toast = (message: string) => window.dispatchEvent(new CustomEvent('panasms
 const key = ['backup-state']
 const state = () => api<State>('state')
 const initialPlan = (): Plan => ({ name: '', repository: '', sources: [], everyHours: 24, keepLast: 3, keepDaily: 7, keepWeekly: 4, enabled: true, allowDowntime: false })
+const initialRepository = (): RepositoryForm => ({ id: '', name: '', path: '', password: '', create: true, provider: 'local', grant: '' })
+const planDraft = (value: Plan, sourceKind: string, sourcePath: string) => JSON.stringify({ plan: value, sourceKind, sourcePath })
 
 function Tasks() {
  const query = useQuery({ queryKey: key, queryFn: state, refetchInterval: 5000, retry: false })
@@ -49,9 +52,12 @@ function Page() {
  const client = useQueryClient()
  const [dialog, setDialog] = useState<'repository' | 'plan' | null>(null)
  const [picker, setPicker] = useState<'repository' | 'source' | 'workspace' | null>(null)
- const [repoForm, setRepoForm] = useState({ id: '', name: '', path: '', password: '', create: true, provider: 'local', grant: '' })
+ const [repoForm, setRepoForm] = useState<RepositoryForm>(initialRepository)
  const [workspacePath, setWorkspacePath] = useState('')
  const [planBaseline, setPlanBaseline] = useState('')
+ const [repoBaseline, setRepoBaseline] = useState<RepositoryForm | null>(null)
+ const [repoBaselineConnection, setRepoBaselineConnection] = useState('')
+ const [repoBaselinePending, setRepoBaselinePending] = useState(false)
  const [keySaved, setKeySaved] = useState(false)
  const [plan, setPlan] = useState<Plan>(initialPlan)
  const [sourceKind, setSourceKind] = useState('files')
@@ -82,12 +88,34 @@ function Page() {
  const connections = useQuery({ queryKey: ['external-connections'], queryFn: () => request<{ id: string; provider: string; email: string }[]>('external/connections'), enabled: dialog === 'repository' && repoForm.provider !== 'local' })
  const linked = connections.data?.filter(c => c.provider === (repoForm.provider === 'drive' ? 'google' : repoForm.provider)) || []
  const selectedConnection = connection || linked[0]?.id || ''
+ useEffect(() => {
+  if (!repoBaselinePending || !connections.isSuccess || !repoBaseline) return
+  const provider = repoBaseline.provider === 'drive' ? 'google' : repoBaseline.provider
+  setRepoBaselineConnection(connections.data?.find(c => c.provider === provider)?.id || '')
+  setRepoBaselinePending(false)
+ }, [repoBaselinePending, connections.isSuccess, connections.data, repoBaseline])
  const addSource = () => { if (!sourcePath && sourceKind !== 'platform') return; setPlan({ ...plan, sources: [...plan.sources, { kind: sourceKind, path: sourceKind === 'platform' ? 'platform' : sourcePath }] }); setSourcePath('') }
- const openPlan = (value?: Plan) => { save.reset(); const draft = value || { ...initialPlan(), repository }; setPlan(draft); setPlanBaseline(JSON.stringify(draft)); setDialog('plan'); setPicker(null) }
+ const openPlan = (value?: Plan) => { save.reset(); const draft = value || { ...initialPlan(), repository }; setPlan(draft); setSourceKind('files'); setSourcePath(''); setConnection(''); setPlanBaseline(planDraft(draft, 'files', '')); setDialog('plan'); setPicker(null) }
+ const openRepository = (form: RepositoryForm) => {
+  save.reset()
+  setKeySaved(false)
+  setConnection('')
+  setRepoForm(form)
+  setRepoBaseline(form)
+  const provider = form.provider === 'drive' ? 'google' : form.provider
+  setRepoBaselineConnection(connections.data?.find(c => c.provider === provider)?.id || '')
+  setRepoBaselinePending(form.provider !== 'local' && !connections.isSuccess)
+  setDialog('repository')
+  setPicker(null)
+ }
+ const repositoryDirty = !!repoBaseline && (
+  JSON.stringify({ form: repoForm, keySaved }) !== JSON.stringify({ form: repoBaseline, keySaved: false }) ||
+  (!repoBaselinePending && selectedConnection !== repoBaselineConnection)
+ )
  return <div className="backup-page">
   <div className="page-heading"><h1>{tr('title')}</h1><div className="actions">
    {part === 'plans' && <Button type="button" className="primary" disabled={!query.data?.repositories.length || busy} onClick={() => openPlan()}>{tr('addPlan')}</Button>}
-   {part === 'repositories' && <Button type="button" className="primary" disabled={busy} onClick={() => { save.reset(); setKeySaved(false); setRepoForm({ id: '', name: '', path: '', password: '', create: true, provider: 'local', grant: '' }); setDialog('repository'); setPicker(null) }}>{tr('addRepository')}</Button>}
+   {part === 'repositories' && <Button type="button" className="primary" disabled={busy} onClick={() => openRepository(initialRepository())}>{tr('addRepository')}</Button>}
    <Button type="button" onClick={() => { refresh(); if (part === 'snapshots') void snapshots.refetch() }}>{tr('refresh')}</Button>
   </div></div>
   {query.isPending && <Notice>{tr('loading')}</Notice>}
@@ -107,7 +135,7 @@ function Page() {
     </>}
     {part === 'repositories' && query.data && <>
      {!query.data.repositories.length && <div className="backup-panel"><h2>{tr('noRepositories')}</h2><p>{tr('repositoryHelp')}</p></div>}
-     {query.data.repositories.map(r => <article className="backup-panel" key={r.id}><h2>{r.name}</h2><p>{tr(r.provider || 'local')}</p><p className="backup-path">{r.path}</p><div className="actions"><Button type="button" onClick={() => updateParams({ repository: r.id, snapshot: '', folder: '' }, '/backup/snapshots')}>{tr('browse')}</Button><Button type="button" disabled={busy} onClick={() => { save.reset(); setKeySaved(false); setRepoForm({ id: r.id, name: r.name, path: r.path, provider: r.provider, password: '', create: false, grant: '' }); setDialog('repository') }}>{tr('reconnect')}</Button><Button type="button" disabled={busy} onClick={() => { run.reset(); confirmAction({ kind: 'check', repository: r.id }) }}>{tr('check')}</Button></div></article>)}
+    {query.data.repositories.map(r => <article className="backup-panel" key={r.id}><h2>{r.name}</h2><p>{tr(r.provider || 'local')}</p><p className="backup-path">{r.path}</p><div className="actions"><Button type="button" onClick={() => updateParams({ repository: r.id, snapshot: '', folder: '' }, '/backup/snapshots')}>{tr('browse')}</Button><Button type="button" disabled={busy} onClick={() => openRepository({ id: r.id, name: r.name, path: r.path, provider: r.provider, password: '', create: false, grant: '' })}>{tr('reconnect')}</Button><Button type="button" disabled={busy} onClick={() => { run.reset(); confirmAction({ kind: 'check', repository: r.id }) }}>{tr('check')}</Button></div></article>)}
     </>}
     {part === 'snapshots' && <div className="backup-panel">
      <label>{tr('repository')}<select value={repository} onChange={e => updateParams({ repository: e.target.value, snapshot: '', folder: '' })}><option value="">{tr('choose')}</option>{query.data?.repositories.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></label>
@@ -123,9 +151,9 @@ function Page() {
     {part === 'recovery' && <div className="backup-panel"><h2>{tr('recovery')}</h2><h3>{tr('workingDisk')}</h3><p>{tr('workingDiskHelp')}</p><p className="backup-path">{query.data?.workspace.path || '/var/lib/panasms-backup'}</p><Button type="button" disabled={busy} onClick={() => setPicker('workspace')}>{tr('chooseFolder')}</Button>{picker === 'workspace' && <FolderPicker policy="mount" onChoose={path => { setWorkspacePath(path); setPicker(null) }} />}{workspacePath && <><p className="backup-path">{workspacePath}</p><Button type="button" className="primary" disabled={workspace.isPending || busy} onClick={() => workspace.mutate(workspacePath)}>{tr('save')}</Button></>}{workspace.isPending && <Notice>{tr('saving')}</Notice>}{workspace.error && <Notice error>{workspace.error.message}</Notice>}<h3>{tr('recovery')}</h3><p>{tr('recoveryHelp')}</p><ol><li>{tr('recoveryStep1')}</li><li>{tr('recoveryStep2')}</li><li>{tr('recoveryStep3')}</li><li>{tr('recoveryStep4')}</li></ol><Notice>{tr('recoveryUnverified')}</Notice></div>}
    </section>
   </div>
-  <Dialog.Root open={!!dialog} onOpenChange={open => { if (!open) { setDialog(null); setPicker(null) } }}><Dialog.Portal><Dialog.Overlay className="dialog-overlay" /><DialogContent className="settings-dialog" variant="form" intent="edit" dirty={dialog === 'plan' ? JSON.stringify(plan) !== planBaseline : !!repoForm.name || !!repoForm.password} busy={save.isPending} message={tr('saving')}
+  <Dialog.Root open={!!dialog} onOpenChange={open => { if (!open) { setDialog(null); setPicker(null) } }}><Dialog.Portal><Dialog.Overlay className="dialog-overlay" /><DialogContent className="settings-dialog" variant="form" intent="edit" dirty={dialog === 'plan' ? planDraft(plan, sourceKind, sourcePath) !== planBaseline : repositoryDirty} busy={save.isPending} message={tr('saving')}
    header={<><Dialog.Title>{tr(dialog === 'plan' ? 'plan' : 'repository')}</Dialog.Title><Dialog.Description>{tr(dialog === 'plan' ? 'planHelp' : 'repositoryHelp')}</Dialog.Description></>}
-   footer={!picker && <div className="actions"><Dialog.Close asChild><Button type="button">{tr('cancel')}</Button></Dialog.Close><Button className="primary" disabled={save.isPending || (dialog === 'repository' && (!keySaved || !repoForm.password || (repoForm.provider !== 'local' && !repoForm.grant)))} type="submit" form="backup-editor">{tr('save')}</Button></div>}>
+   footer={!picker && <div className="actions"><Dialog.Close asChild><Button type="button" data-dialog-cancel>{tr('cancel')}</Button></Dialog.Close><Button className="primary" disabled={save.isPending || (dialog === 'repository' && (!keySaved || !repoForm.password || (repoForm.provider !== 'local' && !repoForm.grant)))} type="submit" form="backup-editor">{tr('save')}</Button></div>}>
    {picker ? <><Button type="button" onClick={() => setPicker(null)}>{tr('back')}</Button><FolderPicker policy="mount" newFolder={picker === 'repository'} initialPath={picker === 'repository' ? repoForm.path : sourcePath} onChoose={path => { if (picker === 'repository') setRepoForm({ ...repoForm, path }); else setSourcePath(path); setPicker(null) }} /></> : dialog === 'repository' ? <form id="backup-editor" className="backup-form" onSubmit={event => { event.preventDefault(); save.mutate() }}>
     <label>{tr('name')}<input required value={repoForm.name} onChange={e => setRepoForm({ ...repoForm, name: e.target.value })} /></label>
     <label>{tr('provider')}<select disabled={!!repoForm.id} value={repoForm.provider} onChange={e => { setRepoForm({ ...repoForm, provider: e.target.value, path: '', grant: '' }); setConnection('') }}><option value="local">{tr('local')}</option><option value="drive">Google Drive</option><option value="dropbox">Dropbox</option><option value="github">{tr("github")}</option></select></label>
